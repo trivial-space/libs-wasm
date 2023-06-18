@@ -2,35 +2,47 @@ use super::{Line, LineData};
 use crate::{
     data_structures::neighbour_list::traits::WithNeighboursTransform,
     rendering::buffered_geometry::{
-        create_buffered_geometry_layout, vert_type, BufferedGeometry, BufferedVertexData,
-        RenderingPrimitive, ToBufferedGeometry,
+        attr_idx, create_buffered_geometry_layout, AttributeIndex, BufferedGeometry,
+        BufferedGeometryAttribute, RenderingPrimitive, ToBufferedGeometry, VertexAttributeValue,
         VertexFormat::{Float32, Float32x2},
-        VertexType,
     },
     utils::default,
 };
-use bytemuck::{Pod, Zeroable};
 use glam::Vec2;
 
-#[repr(C)]
-#[derive(Pod, Copy, Clone, Zeroable)]
-pub struct VertexData {
-    position: Vec2,
-    width: f32,
-    length: f32,
-    uv: Vec2,
-    local_uv: Vec2,
+pub enum VertexAttribute {
+    Position(Vec2),
+    Width(f32),
+    Length(f32),
+    Uv(Vec2),
+    LocalUv(Vec2),
 }
 
-impl BufferedVertexData for VertexData {
-    fn vertex_layout() -> Vec<VertexType> {
-        vec![
-            vert_type("position", Float32x2),
-            vert_type("width", Float32),
-            vert_type("length", Float32),
-            vert_type("uv", Float32x2),
-            vert_type("localUv", Float32x2),
-        ]
+static POS_ATTR: AttributeIndex = attr_idx("position", Float32x2, 0);
+static WIDTH_ATTR: AttributeIndex = attr_idx("width", Float32, 1);
+static LENGTH_ATTR: AttributeIndex = attr_idx("length", Float32, 2);
+static UV_ATTR: AttributeIndex = attr_idx("uv", Float32x2, 3);
+static LOCAL_UV_ATTR: AttributeIndex = attr_idx("local_uv", Float32x2, 4);
+
+impl BufferedGeometryAttribute for VertexAttribute {
+    fn attribute_index(&self) -> AttributeIndex {
+        match self {
+            VertexAttribute::Position(_) => POS_ATTR,
+            VertexAttribute::Width(_) => WIDTH_ATTR,
+            VertexAttribute::Length(_) => LENGTH_ATTR,
+            VertexAttribute::Uv(_) => UV_ATTR,
+            VertexAttribute::LocalUv(_) => LOCAL_UV_ATTR,
+        }
+    }
+
+    fn attribute_value(&self) -> VertexAttributeValue {
+        match self {
+            VertexAttribute::Position(v) => VertexAttributeValue::Float32x2(v.to_array()),
+            VertexAttribute::Width(v) => VertexAttributeValue::Float32(*v),
+            VertexAttribute::Length(v) => VertexAttributeValue::Float32(*v),
+            VertexAttribute::Uv(v) => VertexAttributeValue::Float32x2(v.to_array()),
+            VertexAttribute::LocalUv(v) => VertexAttributeValue::Float32x2(v.to_array()),
+        }
     }
 }
 
@@ -141,29 +153,29 @@ impl Line {
             let top_local_uv = Vec2::new(top.data / self.len, 0.0);
             let bottom_local_uv = Vec2::new(top.data / self.len, 1.0);
 
-            let top_vertex = VertexData {
-                position: top.pos,
-                width: top.width,
-                length: top.data,
-                uv: top_uv,
-                local_uv: top_local_uv,
-            };
+            // let top_vertex = VertexAttribute {
+            //     position: top.pos,
+            //     width: top.width,
+            //     length: top.data,
+            //     uv: top_uv,
+            //     local_uv: top_local_uv,
+            // };
 
-            let bottom_vertex = VertexData {
-                position: bottom.pos,
-                width: bottom.width,
-                length: bottom.data,
-                uv: bottom_uv,
-                local_uv: bottom_local_uv,
-            };
+            // let bottom_vertex = VertexAttribute {
+            //     position: bottom.pos,
+            //     width: bottom.width,
+            //     length: bottom.data,
+            //     uv: bottom_uv,
+            //     local_uv: bottom_local_uv,
+            // };
 
-            buffer.push(top_vertex);
-            buffer.push(bottom_vertex);
+            // buffer.push(top_vertex);
+            // buffer.push(bottom_vertex);
         }
 
         let indices_len = indices.len();
 
-        let geom_layout = create_buffered_geometry_layout(VertexData::vertex_layout());
+        let geom_layout = create_buffered_geometry_layout(VertexAttribute::vertex_layout());
 
         BufferedGeometry {
             buffer: Vec::from(bytemuck::cast_slice(&buffer)),

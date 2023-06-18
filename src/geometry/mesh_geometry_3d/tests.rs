@@ -3,7 +3,7 @@ use crate::{
         mesh_geometry_3d::{Face, MeshGeometry},
         vertex_index::VertIdx3f,
     },
-    rendering::buffered_geometry::{BufferedVertexData, OverrideWith, VertexType},
+    rendering::buffered_geometry::{AttributeIndex, BufferedVertexData, OverrideWith},
 };
 use bytemuck::{Pod, Zeroable};
 use glam::{vec3, Vec3};
@@ -16,7 +16,7 @@ struct Vert {
     pos: Vec3,
 }
 impl BufferedVertexData for Vert {
-    fn vertex_layout() -> Vec<VertexType> {
+    fn vertex_layout() -> Vec<AttributeIndex> {
         todo!()
     }
 }

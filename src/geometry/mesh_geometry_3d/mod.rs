@@ -1,32 +1,64 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::collections::HashMap;
 
 use glam::{vec3, Vec3};
 
 use crate::rendering::buffered_geometry::{
-    create_buffered_geometry_layout, BufferedGeometry, BufferedVertexData, OverrideWith,
-    RenderingPrimitive, ToBufferedGeometry, VertexFormat, VertexType,
+    AttributeIndex, BufferedGeometry, BufferedGeometryAttribute, RenderingPrimitive,
+    ToBufferedGeometry, VertexAttributeValue, VertexFormat,
 };
 
 use super::vertex_index::VertexIndex;
 
+pub static POS_ATTR: AttributeIndex = AttributeIndex {
+    name: "position",
+    format: VertexFormat::Float32x3,
+    index: 0,
+};
+
+pub static NORMAL_ATTR: AttributeIndex = AttributeIndex {
+    name: "normal",
+    format: VertexFormat::Float32x3,
+    index: 1,
+};
+
 #[derive(Debug)]
-pub struct Face<BV>
+pub struct Face<BA>
 where
-    BV: BufferedVertexData + OverrideWith,
+    BA: BufferedGeometryAttribute,
 {
     pub vertices: Vec<usize>,
     pub face_normal: Option<Vec3>,
-    pub data: Option<BV>,
+    pub data: Option<Vec<BA>>,
 }
 
-pub trait MeshVertex<Idx, BV>
+pub struct MeshVertex<Idx, BA>
 where
     Idx: VertexIndex,
-    BV: BufferedVertexData + OverrideWith,
+    BA: BufferedGeometryAttribute,
 {
-    fn to_buffered_vertex_data(&self) -> BV;
-    fn position(&self) -> Vec3;
-    fn vertex_index(&self) -> Idx;
+    pub idx: Idx,
+    pub attribs: Vec<BA>,
+}
+
+impl<Idx, BA> MeshVertex<Idx, BA>
+where
+    Idx: VertexIndex,
+    BA: BufferedGeometryAttribute,
+{
+    pub fn position(&self) -> Vec3 {
+        let pos_idx = self
+            .attribs
+            .iter()
+            .position(|a| a.attribute_index() == POS_ATTR)
+            .unwrap();
+        if let VertexAttributeValue::Float32x3(pos) =
+            self.attribs.get(pos_idx).unwrap().attribute_value()
+        {
+            Vec3::from(pos)
+        } else {
+            panic!("position attribute is not a Vec3")
+        }
+    }
 }
 
 pub enum MeshBufferedGeometryType {
@@ -36,36 +68,31 @@ pub enum MeshBufferedGeometryType {
     FaceNormals,
 }
 
-pub struct MeshVertexData<Idx, BV, V>
+pub struct MeshVertexData<Idx, BA>
 where
     Idx: VertexIndex,
-    BV: BufferedVertexData + OverrideWith,
-    V: MeshVertex<Idx, BV>,
+    BA: BufferedGeometryAttribute,
 {
-    _idx: PhantomData<Idx>,
-    _bv: PhantomData<BV>,
-    pub vertex: V,
+    pub vertex: MeshVertex<Idx, BA>,
     pub faces: Vec<usize>,
     pub vertex_normal: Option<Vec3>,
 }
 
-pub struct MeshGeometry<Idx, BV, V>
+pub struct MeshGeometry<Idx, BA>
 where
     Idx: VertexIndex,
-    BV: BufferedVertexData + OverrideWith,
-    V: MeshVertex<Idx, BV>,
+    BA: BufferedGeometryAttribute,
 {
     next_index: usize,
     vertex_indices: HashMap<Idx, usize>,
-    pub vertices: Vec<MeshVertexData<Idx, BV, V>>,
-    pub faces: Vec<Face<BV>>,
+    pub vertices: Vec<MeshVertexData<Idx, BA>>,
+    pub faces: Vec<Face<BA>>,
 }
 
-impl<Idx, BV, V> MeshGeometry<Idx, BV, V>
+impl<Idx, BA> MeshGeometry<Idx, BA>
 where
     Idx: VertexIndex,
-    BV: BufferedVertexData + OverrideWith,
-    V: MeshVertex<Idx, BV>,
+    BA: BufferedGeometryAttribute,
 {
     pub fn new() -> Self {
         Self {
@@ -76,10 +103,16 @@ where
         }
     }
 
-    pub fn add_face3_data(&mut self, v1: V, v2: V, v3: V, data: Option<BV>) {
-        let v1_idx = self.get_vertex_index(v1.vertex_index());
-        let v2_idx = self.get_vertex_index(v2.vertex_index());
-        let v3_idx = self.get_vertex_index(v3.vertex_index());
+    pub fn add_face3_data(
+        &mut self,
+        v1: MeshVertex<Idx, BA>,
+        v2: MeshVertex<Idx, BA>,
+        v3: MeshVertex<Idx, BA>,
+        data: Option<Vec<BA>>,
+    ) {
+        let v1_idx = self.get_vertex_index(v1.idx);
+        let v2_idx = self.get_vertex_index(v2.idx);
+        let v3_idx = self.get_vertex_index(v3.idx);
 
         let face_idx = self.faces.len();
 
@@ -90,11 +123,18 @@ where
         self.add_vertex(v3_idx, face_idx, v3);
     }
 
-    pub fn add_face4_data(&mut self, v1: V, v2: V, v3: V, v4: V, data: Option<BV>) {
-        let v1_idx = self.get_vertex_index(v1.vertex_index());
-        let v2_idx = self.get_vertex_index(v2.vertex_index());
-        let v3_idx = self.get_vertex_index(v3.vertex_index());
-        let v4_idx = self.get_vertex_index(v4.vertex_index());
+    pub fn add_face4_data(
+        &mut self,
+        v1: MeshVertex<Idx, BA>,
+        v2: MeshVertex<Idx, BA>,
+        v3: MeshVertex<Idx, BA>,
+        v4: MeshVertex<Idx, BA>,
+        data: Option<Vec<BA>>,
+    ) {
+        let v1_idx = self.get_vertex_index(v1.idx);
+        let v2_idx = self.get_vertex_index(v2.idx);
+        let v3_idx = self.get_vertex_index(v3.idx);
+        let v4_idx = self.get_vertex_index(v4.idx);
 
         let face_idx = self.faces.len();
         self.create_face4(v1_idx, v2_idx, v3_idx, v4_idx, None, data);
@@ -105,19 +145,30 @@ where
         self.add_vertex(v4_idx, face_idx, v4);
     }
 
-    pub fn add_face3(&mut self, v1: V, v2: V, v3: V) {
+    pub fn add_face3(
+        &mut self,
+        v1: MeshVertex<Idx, BA>,
+        v2: MeshVertex<Idx, BA>,
+        v3: MeshVertex<Idx, BA>,
+    ) {
         self.add_face3_data(v1, v2, v3, None)
     }
 
-    pub fn add_face4(&mut self, v1: V, v2: V, v3: V, v4: V) {
+    pub fn add_face4(
+        &mut self,
+        v1: MeshVertex<Idx, BA>,
+        v2: MeshVertex<Idx, BA>,
+        v3: MeshVertex<Idx, BA>,
+        v4: MeshVertex<Idx, BA>,
+    ) {
         self.add_face4_data(v1, v2, v3, v4, None)
     }
 
-    pub fn vertex(&self, i: usize) -> &MeshVertexData<Idx, BV, V> {
+    pub fn vertex(&self, i: usize) -> &MeshVertexData<Idx, BA> {
         &self.vertices[i]
     }
 
-    pub fn face(&self, i: usize) -> &Face<BV> {
+    pub fn face(&self, i: usize) -> &Face<BA> {
         &self.faces[i]
     }
 
@@ -183,7 +234,7 @@ where
         }
     }
 
-    pub fn set_vertex(&mut self, vertex_idx: usize, vertex: V) {
+    pub fn set_vertex(&mut self, vertex_idx: usize, vertex: MeshVertex<Idx, BA>) {
         if let Some(data) = self.vertices.get_mut(vertex_idx) {
             data.vertex = vertex
         }
@@ -235,9 +286,9 @@ where
         &self,
         geom_type: MeshBufferedGeometryType,
     ) -> BufferedGeometry {
+        let mut geometry = BufferedGeometryData::new();
         let mut buffer = vec![];
         let mut indices = vec![];
-        let mut layout: Vec<VertexType> = BV::vertex_layout();
 
         match geom_type {
             MeshBufferedGeometryType::NoNormals => {
@@ -261,7 +312,7 @@ where
                     buffer.extend(bytemuck::bytes_of(&normal));
                 }
                 self.fill_buffered_geometry_indices(&mut indices);
-                layout.push(VertexType {
+                layout.push(AttributeIndex {
                     name: "normal",
                     format: VertexFormat::Float32x3,
                 })
@@ -285,7 +336,7 @@ where
                         buffer.extend(bytemuck::bytes_of(&normal));
                     }
                 }
-                layout.push(VertexType {
+                layout.push(AttributeIndex {
                     name: "normal",
                     format: VertexFormat::Float32x3,
                 })
@@ -309,7 +360,7 @@ where
                         buffer.extend(bytemuck::bytes_of(&normal));
                     }
                 }
-                layout.push(VertexType {
+                layout.push(AttributeIndex {
                     name: "normal",
                     format: VertexFormat::Float32x3,
                 })
@@ -339,19 +390,18 @@ where
         }
     }
 
-    fn fill_buffered_geometry_indices(&self, indices: &mut Vec<u8>) {
+    fn fill_buffered_geometry_indices(&self, indices: &mut Vec<u32>) {
         for face in self.faces.iter() {
             if face.vertices.len() != 3 {
                 panic!("triangulate the geometry before generating buffers");
             }
             for v in &face.vertices {
-                let i = *v as u32;
-                indices.extend(bytemuck::bytes_of(&i))
+                indices.push(*v as u32);
             }
         }
     }
 
-    fn add_vertex(&mut self, vertex_idx: usize, face_idx: usize, vertex: V) {
+    fn add_vertex(&mut self, vertex_idx: usize, face_idx: usize, vertex: MeshVertex<Idx, BA>) {
         if let Some(data) = self.vertices.get_mut(vertex_idx) {
             data.vertex = vertex;
         } else {
@@ -359,8 +409,6 @@ where
                 vertex,
                 faces: vec![],
                 vertex_normal: None,
-                _idx: PhantomData,
-                _bv: PhantomData,
             });
         }
         self.update_vertex_face(vertex_idx, face_idx);
@@ -372,7 +420,7 @@ where
         v2_idx: usize,
         v3_idx: usize,
         normal: Option<Vec3>,
-        data: Option<BV>,
+        data: Option<Vec<BA>>,
     ) {
         let mut vertices = Vec::with_capacity(3);
         vertices.push(v1_idx);
@@ -393,7 +441,7 @@ where
         v3_idx: usize,
         v4_idx: usize,
         normal: Option<Vec3>,
-        data: Option<BV>,
+        data: Option<Vec<BA>>,
     ) {
         let mut vertices = Vec::with_capacity(4);
         vertices.push(v1_idx);
@@ -412,17 +460,6 @@ where
         if let Some(v) = self.vertices.get_mut(vertex_idx) {
             v.faces.push(face_idx);
         }
-    }
-}
-
-impl<Idx, BV, V> ToBufferedGeometry for MeshGeometry<Idx, BV, V>
-where
-    Idx: VertexIndex,
-    BV: BufferedVertexData + OverrideWith,
-    V: MeshVertex<Idx, BV>,
-{
-    fn to_buffered_geometry(&self) -> BufferedGeometry {
-        self.to_buffered_geometry_by_type(MeshBufferedGeometryType::NoNormals)
     }
 }
 
