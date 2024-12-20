@@ -1,16 +1,13 @@
 use trivalibs::{
 	bmap,
 	painter::{
-		create_canvas_app,
-		form::FormData,
-		load_fragment_shader, load_vertex_shader,
-		painter::UniformType,
+		create_canvas_app, load_fragment_shader, load_vertex_shader,
 		shade::ShadeProps,
 		sketch::{Sketch, SketchProps},
 		uniform::UniformBuffer,
 		wgpu::{self, VertexFormat},
 		winit::event::{DeviceEvent, WindowEvent},
-		CanvasApp, Painter,
+		CanvasApp, Painter, UniformType,
 	},
 	prelude::*,
 	rendering::{
@@ -84,26 +81,23 @@ impl CanvasApp<RenderState, ()> for App {
 		load_vertex_shader!(shade, p, "../shader/vertex.spv");
 		load_fragment_shader!(shade, p, "../shader/fragment.spv");
 
-		let form = p.form_create(
-			&FormData {
-				vertex_buffer: VERTICES,
-				index_buffer: None,
-			},
-			default(),
-		);
+		let form = p.form_from_buffer(VERTICES, default());
 
-		let uniforms = self
-			.triangles
-			.iter()
-			.map(|t| {
-				(
-					vert_u_type.create_buff(p, t.transform.model_mat()),
-					frag_u_type.create_buff(p, rand_vec4()),
-				)
-			})
+		let model_mats = (0..self.triangles.len())
+			.map(|_| vert_u_type.create_mat4(p))
 			.collect::<Vec<_>>();
 
-		let cam = vert_u_type.create_buff(p, self.cam.view_proj_mat());
+		let cam = vert_u_type.create_mat4(p);
+
+		let instances = model_mats
+			.iter()
+			.map(|model| {
+				bmap! {
+					1 => model.uniform,
+					2 => frag_u_type.const_vec4(p, rand_vec4()),
+				}
+			})
+			.collect();
 
 		let sketch = p.sketch_create(
 			form,
@@ -112,23 +106,12 @@ impl CanvasApp<RenderState, ()> for App {
 				uniforms: bmap! {
 					0 => cam.uniform,
 				},
-				instances: uniforms
-					.iter()
-					.map(|(model, color)| {
-						bmap! {
-							1 => model.uniform,
-							2 => color.uniform,
-						}
-					})
-					.collect(),
-
+				instances,
 				cull_mode: None,
 				blend_state: wgpu::BlendState::ALPHA_BLENDING,
 				..default()
 			},
 		);
-
-		let model_mats = uniforms.into_iter().map(|(model, _)| model).collect();
 
 		RenderState {
 			sketch,
